@@ -1,0 +1,201 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>iSTRIVE</title>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-storage-compat.js"></script>
+<script>window.FIREBASE_CONFIG={"apiKey": "AIzaSyDLNRraORjyJpy0xnWwc9cBjg7ur8T84-s", "authDomain": "istrive-fe270.firebaseapp.com", "projectId": "istrive-fe270", "storageBucket": "istrive-fe270.firebasestorage.app", "messagingSenderId": "123502502693", "appId": "1:123502502693:web:cc72bd201a3ac13f13b0cc"};window.APP_LOADER=true;</script>
+<style id="fbGateCss">
+body.fb-gate>*:not(#fbGate){display:none!important}
+#fbGate{position:fixed;inset:0;background:#17332c;color:#d9e6e0;font:15px/1.45 "Titillium Web",system-ui,sans-serif;display:flex;align-items:center;justify-content:center;z-index:99999}
+.fb-wrap{width:100%;max-width:440px;padding:16px}
+.fb-card{background:#fff;color:#16201d;border-radius:12px;padding:26px 28px;box-shadow:0 20px 60px rgba(0,0,0,.35)}
+.fb-logo{font-weight:700;letter-spacing:.12em;color:#1e5b4a;font-size:13px;margin-bottom:6px}
+.fb-card h1{font-size:22px;margin:0 0 8px}
+.fb-sub{color:#5d6b66;margin:0 0 14px}
+.fb-card label{display:block;font-size:12px;font-weight:600;color:#5d6b66;margin:10px 0 4px}
+.fb-card input[type=email],.fb-card input[type=password]{display:block;width:100%;box-sizing:border-box;font:inherit;padding:9px 10px;border:1px solid #d5dcd8;border-radius:8px;background:#fff;color:#16201d}
+.fb-bar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:16px}
+.fb-btn{font:inherit;font-weight:600;padding:8px 14px;border-radius:8px;border:1px solid #d5dcd8;background:#f6f8f7;color:#16201d;cursor:pointer}
+.fb-btn.p{background:#1e5b4a;border-color:#1e5b4a;color:#fff}
+.fb-btn:disabled{opacity:.6;cursor:default}
+.fb-lnk{font:inherit;background:none;border:0;color:#1e5b4a;cursor:pointer;text-decoration:underline;padding:4px}
+.fb-msg{min-height:18px;font-size:13px;color:#b3412e;margin-top:8px;white-space:pre-wrap}
+.fb-track{height:8px;background:#e4eae7;border-radius:4px;overflow:hidden;margin-top:6px}
+.fb-fill{height:100%;width:0;background:#1e5b4a;transition:width .2s}
+</style>
+</head><body class="fb-gate"><div id="fbGate"></div>
+<script>
+/* iSTRIVE 2.0 hosted boot: sign in with Firebase, load the data pack, then run the app. */
+(function(){
+'use strict';
+const CFG=window.FIREBASE_CONFIG;
+const $=s=>document.querySelector(s);
+const gate=$('#fbGate');const say=(h)=>{gate.innerHTML=h};
+let app,auth,db,storage;
+try{try{app=firebase.initializeApp(CFG)}catch(e){if(firebase.apps&&firebase.apps.length)app=firebase.app();else throw e}auth=firebase.auth();db=firebase.firestore();storage=firebase.storage();
+  try{db.settings({ignoreUndefinedProperties:true,cacheSizeBytes:firebase.firestore.CACHE_SIZE_UNLIMITED,merge:true})}catch(e){console.warn('settings',e.message)}
+}catch(e){say(card('iSTRIVE could not start','<p>'+esc(e.message)+'</p>'));return}
+const persist=Promise.resolve();/* SDK persistence off: the page keeps its own compact cache (CACHE below) and only pulls records changed since the last visit */
+/* ---------- CACHE: one JSON blob per collection in IndexedDB, with the newest 'u' seen ---------- */
+const CACHE=(()=>{let dbp=null;const open=()=>dbp||(dbp=new Promise((res,rej)=>{const q=indexedDB.open('istrive-sync',1);q.onupgradeneeded=()=>q.result.createObjectStore('cols');q.onsuccess=()=>res(q.result);q.onerror=()=>rej(q.error)}).catch(e=>{console.warn('cache',e);return null}));
+  const tx=async(mode,fn)=>{const d=await open();if(!d)return null;return new Promise((res,rej)=>{const t=d.transaction('cols',mode);const st=t.objectStore('cols');const out=fn(st);t.oncomplete=()=>res(out&&out.result!==undefined?out.result:out);t.onerror=()=>rej(t.error)})};
+  return{async get(k){try{return await tx('readonly',st=>st.get(k))}catch{return null}},
+    async all(keys){const out={};try{await tx('readonly',st=>{keys.forEach(k=>{const r=st.get(k);r.onsuccess=()=>{if(r.result)out[k]=r.result}})})}catch(e){console.warn('cache read',e)}return out},
+    async put(k,v){try{await tx('readwrite',st=>st.put(v,k))}catch(e){console.warn('cache write',e)}},
+    async clear(){try{await tx('readwrite',st=>st.clear())}catch{}}}})();
+
+function esc(v){return String(v==null?'':v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+function card(title,body){return `<div class="fb-wrap"><div class="fb-card"><div class="fb-logo">iSTRIVE</div><h1>${esc(title)}</h1>${body}</div></div>`}
+function human(e){const c=e&&e.code||'';return({'auth/invalid-email':'That email address does not look right.','auth/user-not-found':'No login with that email — ask Max or Jennifer to create one.','auth/wrong-password':'Wrong password.','auth/invalid-credential':'Wrong email or password.','auth/invalid-login-credentials':'Wrong email or password.','auth/email-already-in-use':'There is already a login with that email.','auth/weak-password':'Use a longer password (8+ characters).','auth/too-many-requests':'Too many tries. Wait a few minutes and try again.','auth/network-request-failed':'No connection.'}[c])||(e&&e.message)||String(e)}
+
+/* ---------- screens ---------- */
+function loginScreen(msg){
+  say(card('Sign in',`
+   <p class="fb-sub">Use your STRIVE email and the password Max or Jennifer set up for you.</p>
+   <label>Email<input id="fbE" type="email" autocomplete="username" placeholder="you@strivere.com"></label>
+   <label>Password<input id="fbP" type="password" autocomplete="current-password"></label>
+   <div class="fb-msg" id="fbMsg">${esc(msg||'')}</div>
+   <div class="fb-bar"><button class="fb-btn p" id="fbGo">Sign in</button><button class="fb-lnk" id="fbForgot">Forgot password</button></div>`));
+  const e=$('#fbE'),p=$('#fbP'),m=$('#fbMsg');e.focus();
+  const go=async()=>{m.textContent='';const em=e.value.trim().toLowerCase(),pw=p.value;if(!em||!pw){m.textContent='Enter your email and password.';return}
+    $('#fbGo').disabled=true;try{await auth.signInWithEmailAndPassword(em,pw)}catch(x){m.textContent=human(x);$('#fbGo').disabled=false}};
+  $('#fbGo').onclick=go;p.onkeydown=ev=>{if(ev.key==='Enter')go()};e.onkeydown=ev=>{if(ev.key==='Enter')p.focus()};
+  $('#fbForgot').onclick=async()=>{const em=e.value.trim().toLowerCase();if(!em){m.textContent='Type your email first, then click Forgot password.';return}try{await auth.sendPasswordResetEmail(em);m.textContent='Sent — check your email for the reset link.'}catch(x){m.textContent=human(x)}}}
+function progress(title,sub){say(card(title,`<p class="fb-sub" id="fbProg">${esc(sub||'')}</p><div class="fb-track"><div class="fb-fill" id="fbFill"></div></div>`))}
+function setProg(t,f){const p=$('#fbProg');if(p)p.textContent=t;const b=$('#fbFill');if(b&&f!=null)b.style.width=Math.round(f*100)+'%'}
+
+/* ---------- data pack: blocks in Storage, cached in this browser ---------- */
+const BASE_IDS=['mapgz','v5data','omgz','v5media','bovlib','bovman','bovfonts','bovheads'];
+const PACK={man:null};
+async function manifest(){try{const url=await storage.ref('blocks/manifest.json').getDownloadURL();const r=await fetch(url);if(!r.ok)throw new Error(r.status);PACK.man=await r.json();return PACK.man}catch(e){if(e&&e.code==='storage/unauthorized'){const x=new Error('NOACCESS');x.code='NOACCESS';throw x}if(e&&e.code==='storage/object-not-found')return null;if(/404/.test(String(e.message)))return null;throw e}}
+const cacheName=()=>'istrive-pack-'+(PACK.man?PACK.man.ver:'0');
+async function blockText(id,onProg){const key='/blocks/'+PACK.man.ver+'/'+id;let cache=null;try{cache=await caches.open(cacheName())}catch{}
+  if(cache){const hit=await cache.match(key);if(hit)return hit.text()}
+  const url=await storage.ref('blocks/'+PACK.man.ver+'/'+id+'.txt').getDownloadURL();const r=await fetch(url);if(!r.ok)throw new Error('block '+id+': HTTP '+r.status);
+  const total=+r.headers.get('content-length')||0;let text;
+  if(onProg&&r.body){const rd=r.body.getReader();const parts=[];let got=0;while(true){const{done,value}=await rd.read();if(done)break;parts.push(value);got+=value.length;onProg(got,total)}const blob=new Blob(parts);text=await blob.text();if(cache)try{await cache.put(key,new Response(blob,{headers:{'content-type':'text/plain'}}))}catch(e){console.warn('cache',e)}}
+  else{text=await r.text();if(cache)try{await cache.put(key,new Response(text,{headers:{'content-type':'text/plain'}}))}catch(e){console.warn('cache',e)}}
+  return text}
+async function dropOldCaches(){try{for(const n of await caches.keys())if(n.startsWith('istrive-pack-')&&n!==cacheName())await caches.delete(n)}catch{}}
+window.BLOCKS={text:id=>blockText(id),ids:()=>PACK.man?PACK.man.ids:[]};
+/* read the data blocks out of a single-file iSTRIVE.html and upload them */
+async function uploadPack(file,say){say=say||(()=>{});say('Reading '+file.name+'…');const txt=await file.text();const ids=[];const ver=new Date().toISOString().replace(/[-:T]/g,'').slice(0,12);
+  const re=/<script type="(?:text\/plain|application\/json|application\/octet-stream)" id="([a-z0-9_]+)">/g;let m;const found=[];
+  while((m=re.exec(txt))){const id=m[1];if(!(BASE_IDS.includes(id)||/^crm(gz|lk|sh_\d\d)$/.test(id)))continue;const s=m.index+m[0].length;const e=txt.indexOf('<\/script>',s);if(e<0)continue;found.push([id,s,e])}
+  if(!found.length)throw new Error('No data blocks in that file — pick the single-file iSTRIVE.html');
+  let n=0;for(const[id,s,e]of found){const body=txt.slice(s,e);n++;say(`Uploading ${id} (${n}/${found.length}, ${(body.length/1e6).toFixed(1)} MB)…`);
+    const task=storage.ref('blocks/'+ver+'/'+id+'.txt').put(new Blob([body],{type:'text/plain'}),{contentType:'text/plain',cacheControl:'public,max-age=31536000'});
+    await new Promise((res,rej)=>task.on('state_changed',sn=>say(`Uploading ${id} (${n}/${found.length}) ${Math.round(sn.bytesTransferred/sn.totalBytes*100)}%`),rej,res));ids.push(id)}
+  const man={ver,ids,at:new Date().toISOString(),from:file.name,size:txt.length};
+  await storage.ref('blocks/manifest.json').put(new Blob([JSON.stringify(man)],{type:'application/json'}),{contentType:'application/json',cacheControl:'no-cache'});
+  PACK.man=man;say('Done.');return man}
+function setupScreen(u){say(card('First-time setup: data pack',`<p>The CRM lookup, OM library, photos and BOV library are not in the cloud yet. Pick the single-file <b>iSTRIVE.html</b> you have (the 180 MB one) — the data blocks are read out of it and uploaded once. This takes a few minutes.</p>
+   <div class="fb-bar"><label class="fb-btn p">Choose iSTRIVE.html<input id="fbPackIn" type="file" accept=".html" hidden></label><button class="fb-lnk" id="fbOut">Sign out</button></div><div class="fb-msg" id="fbMsg"></div>`));
+  $('#fbOut').onclick=()=>auth.signOut();
+  $('#fbPackIn').onchange=async ev=>{const f=ev.target.files[0];if(!f)return;const m=$('#fbMsg');try{await uploadPack(f,t=>m.textContent=t);start(u)}catch(e){m.textContent='Failed: '+(e.message||e.code)}}}
+
+/* ---------- Firestore adapter: the app's db API (collection/doc/get/set/delete/onSnapshot) over JSON documents ---------- */
+const hoisted=new Map();
+async function sha1(s){const b=await crypto.subtle.digest('SHA-1',new TextEncoder().encode(s));return[...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,'0')).join('')}
+async function hoist(v){/* data: URLs over 20 KB move to Storage; the record keeps a URL */
+  if(typeof v==='string'){if(v.length>20000&&v.startsWith('data:')){if(hoisted.has(v))return hoisted.get(v);const h=await sha1(v.slice(0,4000)+v.length);const mt=(v.slice(5,v.indexOf(';'))||'application/octet-stream');const ext={'image/jpeg':'jpg','image/png':'png','image/webp':'webp','image/gif':'gif','application/pdf':'pdf','font/woff2':'woff2','font/woff':'woff','font/ttf':'ttf','image/svg+xml':'svg'}[mt]||'bin';
+      const ref=storage.ref('assets/d_'+h+'.'+ext);let url;try{url=await ref.getDownloadURL()}catch{const bin=await (await fetch(v)).blob();await ref.put(bin,{contentType:mt,cacheControl:'public,max-age=31536000'});url=await ref.getDownloadURL()}hoisted.set(v,url);return url}return v}
+  if(Array.isArray(v)){const out=new Array(v.length);for(let i=0;i<v.length;i++)out[i]=await hoist(v[i]);return out}
+  if(v&&typeof v==='object'){const out={};for(const k in v)out[k]=await hoist(v[k]);return out}return v}
+const hasData=v=>typeof v==='string'?(v.length>20000&&v.startsWith('data:')):Array.isArray(v)?v.some(hasData):(v&&typeof v==='object')?Object.values(v).some(hasData):false;
+const safeId=id=>String(id).replace(/\//g,'%2F');
+function wrapSnap(d){let parsed,have=false;return{id:d.id,exists:d.exists,get u(){const x=d.data();return x?+(x.u||0):0},data(){if(have)return parsed;have=true;const x=d.data();if(!x||x.del)return parsed=undefined;if(typeof x.j==='string'){try{parsed=JSON.parse(x.j)}catch{parsed={}}}else parsed=x;return parsed}}}
+function docRef(path){const parts=path.split('/');if(parts.length%2)throw new Error('doc path '+path);const r=db.doc(parts.map((p,i)=>i%2?safeId(p):p).join('/'));
+  return{async set(rec){let v=rec;if(hasData(v))v=await hoist(v);const j=JSON.stringify(v);if(j.length>1000000){const e=new Error('record too large');e.code='invalid_argument';throw e}await r.set({j,u:Date.now()})},
+    delete(){return r.set({j:'',u:Date.now(),del:true})},/* a tombstone, so every other browser's cache learns about the delete */async get(){return wrapSnap(await r.get())}}}
+function colRef(path,since){const r=since!=null?db.collection(path).where('u','>',since):db.collection(path);
+  return{async get(){const s=await r.get();return{docs:s.docs.map(wrapSnap)}},
+    onSnapshot(cb,err){let first=true;return r.onSnapshot({includeMetadataChanges:true},s=>{const fromCache=s.metadata.fromCache;const changes=s.docChanges().map(ch=>({type:ch.type,doc:wrapSnap(ch.doc)}));
+      if(!first&&!changes.length&&fromCache)return;/* metadata-only flicker */
+      const snap={fromCache,first,changes,get docs(){return s.docs.map(wrapSnap)}};first=false;cb(snap)},err)},
+    since(u){return colRef(path,+u||0)}}}
+const DB={collection:colRef,doc:docRef};
+const ASSETS={async upload(f){const id='a_'+Date.now().toString(36)+Math.random().toString(36).slice(2,7);const name=String(f.name||'file').replace(/[^\w.\-]+/g,'_').slice(0,80);const ref=storage.ref('assets/'+id+'_'+name);
+  await ref.put(f,{contentType:f.type||'application/octet-stream',cacheControl:'public,max-age=31536000'});return{id,url:await ref.getDownloadURL()}}};
+async function allow(email,on){const em=String(email||'').trim().toLowerCase();if(!em)return;try{if(on)await db.doc('access/'+em).set({at:new Date().toISOString()});else await db.doc('access/'+em).delete()}catch(e){console.warn('allow',e)}}
+
+let adminApp=null;
+async function createLogin(email,password){if(!adminApp)adminApp=firebase.initializeApp(CFG,'admin');const a2=adminApp.auth();
+  try{const cr=await a2.createUserWithEmailAndPassword(String(email).trim().toLowerCase(),password);const uid=cr.user.uid;await a2.signOut();let ok=false;for(let i=0;i<3&&!ok;i++){try{await db.doc('access/'+String(email).trim().toLowerCase()).set({at:new Date().toISOString()});ok=true}catch(e){console.warn('allow',e);await new Promise(r=>setTimeout(r,800))}}if(!ok){const x=new Error('The login was created but access could not be saved — open Access and click Allow for this person.');throw x}return uid}
+  catch(e){try{await a2.signOut()}catch{}throw e}}
+async function resetLogin(email){await auth.sendPasswordResetEmail(String(email).trim().toLowerCase())}
+/* ---------- bulk load: straight to Firestore over REST (documents:commit, 400 writes per call), bypassing the local cache ---------- */
+const REST=`https://firestore.googleapis.com/v1/projects/${CFG.projectId}/databases/(default)/documents`;const DOCNAME=`projects/${CFG.projectId}/databases/(default)/documents`;
+const idTok=()=>auth.currentUser.getIdToken();
+async function restWrite(writes,errs){const t=await idTok();for(let a=0;a<4;a++){const r=await fetch(REST+':commit',{method:'POST',headers:{Authorization:'Bearer '+t,'Content-Type':'application/json'},body:JSON.stringify({writes})});
+    if(r.ok)return true;
+    const txt=await r.text();if(a===3){errs.push('HTTP '+r.status+' '+txt.slice(0,160));return false}await new Promise(x=>setTimeout(x,1200*(a+1)))}}
+async function restList(path){const names=[];let pt='';const t=await idTok();do{const r=await fetch(`${REST}/${path}?pageSize=1000&mask.fieldPaths=u`+(pt?'&pageToken='+encodeURIComponent(pt):''),{headers:{Authorization:'Bearer '+t}});const j=await r.json();(j.documents||[]).forEach(d=>names.push(d.name));pt=j.nextPageToken||''}while(pt);return names}
+async function runPar(items,n,fn){let i=0;const w=async()=>{while(i<items.length){const k=i++;await fn(items[k],k)}};await Promise.all(Array.from({length:n},w))}
+/* full read of collections straight from the REST API (1,000 docs a page, 4 collections at a time): used the first time a browser opens iSTRIVE, instead of 76K docs through the SDK */
+async function restPull(items,onDocs){await runPar(items,4,async([c,path])=>{let pt='';do{const t=await idTok();let r,j;for(let a=0;;a++){r=await fetch(`${REST}/${path}?pageSize=1000`+(pt?'&pageToken='+encodeURIComponent(pt):''),{headers:{Authorization:'Bearer '+t}});if(r.ok)break;if(a>=3)throw new Error('HTTP '+r.status+' reading '+c);await new Promise(x=>setTimeout(x,1000*(a+1)))}
+    j=await r.json();const docs=(j.documents||[]).map(d=>{const f=d.fields||{};return{id:d.name.slice(d.name.lastIndexOf('/')+1),j:f.j?.stringValue||'',u:+(f.u?.integerValue||f.u?.doubleValue||0),del:!!(f.del&&f.del.booleanValue)}});onDocs(c,docs);pt=j.nextPageToken||''}while(pt)})}
+/* data: {col:{id:rec}} → wipes root/env/* then writes everything; say(text) gets progress; returns {written,errors} */
+async function fastLoad(root,env,cols,data,say,clean){const errs=[];say=say||(()=>{});clean=clean||(x=>x);
+  say('Checking access…');if(!await restWrite([{update:{name:`${DOCNAME}/${root}/${env}/_probe/x`,fields:{u:{integerValue:'1'}}}},{delete:`${DOCNAME}/${root}/${env}/_probe/x`}],errs))throw new Error('The database refused the write: '+errs[0]);
+  say('Clearing old records…');const del=[];for(const c of cols)del.push(...await restList(`${root}/${env}/${c}`));
+  const dch=[];for(let i=0;i<del.length;i+=500)dch.push(del.slice(i,i+500));let dd=0;await runPar(dch,6,async ch=>{if(await restWrite(ch.map(n=>({delete:n})),errs))dd+=ch.length;say(`Clearing old records… ${dd.toLocaleString()} / ${del.length.toLocaleString()}`)});
+  const writes=[];let big=0;for(const c of cols){const nd=data[c]||{};for(const id in nd){const r=nd[id];if(!r||typeof r!=='object')continue;const sid=safeId(id);if(sid==='.'||sid==='..'||/^__.*__$/.test(sid))continue;
+      if(hasData(r)){big++;say(`Moving attachments to storage… (${big})`);try{await docRef(`${root}/${env}/${c}/${id}`).set(clean(r))}catch(e){errs.push(c+'/'+id+': '+(e.message||e.code))}continue}
+      const j=JSON.stringify(clean(r));if(j.length>1000000){errs.push(c+'/'+id+': record too large');continue}
+      writes.push({update:{name:`${DOCNAME}/${root}/${env}/${c}/${sid}`,fields:{j:{stringValue:j},u:{integerValue:String(Date.now())}}}})}}
+  const ch=[];for(let i=0;i<writes.length;i+=400)ch.push(writes.slice(i,i+400));let done=0;await runPar(ch,6,async c=>{if(await restWrite(c,errs))done+=c.length;say(`Loading ${done.toLocaleString()} of ${writes.length.toLocaleString()}…`)});
+  try{await restWrite([{update:{name:`${DOCNAME}/${root}/${env}/_meta/reset`,fields:{u:{integerValue:String(Date.now())}}}}],errs)}catch{}/* every browser drops its cache and reloads in full */
+  await CACHE.clear();
+  return{written:done+big,errors:errs}}
+
+/* ---------- the loader page: index.html on GitHub never changes; the app itself lives in Storage (app/current.html), installed from Admin ---------- */
+const APP_REF=()=>storage.ref('app/current.html');
+async function installApp(file,say){say=say||(()=>{});const txt=await file.text();if(!/id="appsrc"/.test(txt)||!/FIREBASE_CONFIG/.test(txt))throw new Error('That is not an iSTRIVE app file (expected the hosted build with the app inside).');
+  const blob=new Blob([txt],{type:'text/html'});const meta={contentType:'text/html; charset=utf-8',cacheControl:'no-cache, max-age=0',customMetadata:{name:file.name,by:(auth.currentUser&&auth.currentUser.email)||'',at:new Date().toISOString()}};
+  const stamp=new Date().toISOString().replace(/[:.]/g,'-');say('Keeping a copy of the previous version…');try{await storage.ref('app/history/'+stamp+'.html').put(blob,meta)}catch(e){console.warn('history',e)}
+  say('Installing…');await new Promise((res,rej)=>{const t=APP_REF().put(blob,meta);t.on('state_changed',sn=>say(`Installing… ${(sn.bytesTransferred/1e6).toFixed(1)} / ${(sn.totalBytes/1e6).toFixed(1)} MB`),rej,res)});
+  try{const c=await caches.open('istrive-app');for(const k of await c.keys())await c.delete(k)}catch{}return true}
+function installScreen(u,msg){say(card('Install iSTRIVE',`<p>Signed in as <b>${esc(u.email)}</b>. No iSTRIVE app file is installed yet. Pick the <b>index.html</b> (or iSTRIVE-app.html) build and it goes live for everyone at this same address.</p>
+   <div class="fb-bar"><label class="fb-btn p">Choose app file<input type="file" accept=".html" id="fbAppPick" hidden></label><button class="fb-lnk" id="fbOut">Sign out</button></div><div class="fb-msg" id="fbMsg">${esc(msg||'')}</div>`));
+  $('#fbOut').onclick=()=>auth.signOut().then(()=>location.reload());
+  $('#fbAppPick').onchange=async e=>{const f=e.target.files[0];if(!f)return;const m=$('#fbMsg');try{await installApp(f,t=>{m.style.color='#1e5b4a';m.textContent=t});m.textContent='Installed. Opening…';location.reload()}catch(err){m.style.color='#b3412e';m.textContent=err.message||err.code||String(err)}}}
+async function loadApp(u){progress('Starting iSTRIVE','Checking for the latest version…');
+  let meta;try{meta=await APP_REF().getMetadata()}catch(e){if(e&&e.code==='storage/object-not-found'){started=false;installScreen(u);return}
+    if(e&&e.code==='storage/unauthorized'){started=false;say(card('Almost there',`<p>Your login works, but <b>${esc(u.email)}</b> has not been given access to iSTRIVE yet. Ask Max or Jennifer to open <b>Access</b> in iSTRIVE and allow this email, then press Try again.</p><div class="fb-bar"><button class="fb-btn p" onclick="location.reload()">Try again</button><button class="fb-lnk" id="fbOut">Sign out</button></div>`));$('#fbOut').onclick=()=>auth.signOut().then(()=>location.reload());return}throw e}
+  const key='/app/__istrive_app_'+meta.generation;let html=null;let cache=null;try{cache=await caches.open('istrive-app');const hit=await cache.match(key);if(hit)html=await hit.text()}catch{}
+  if(html==null){setProg('Loading the latest version…',.3);const url=await APP_REF().getDownloadURL();const r=await fetch(url,{cache:'no-store'});if(!r.ok)throw new Error('Could not download the app ('+r.status+')');html=await r.text();
+    try{if(cache){for(const k of await cache.keys())await cache.delete(k);await cache.put(key,new Response(html,{headers:{'Content-Type':'text/html'}}))}}catch{}}
+  setProg('Opening…',1);window.__APP_GEN=meta.generation;window.__APP_META=meta.customMetadata||{};window.APP_LOADER=false;
+  /* swap the page for the app without document.write (Chrome may block cross-site scripts written that way): markup first, then the scripts in order */
+  const doc=new DOMParser().parseFromString(html,'text/html');const run=[];const isExec=sc=>!sc.type||/^(text\/javascript|module|application\/javascript)$/i.test(sc.type);
+  doc.querySelectorAll('script').forEach(sc=>{if(isExec(sc)){run.push({src:sc.src||'',text:sc.textContent||'',module:/module/i.test(sc.type||'')});sc.remove()}});
+  const had=new Set([...document.scripts].map(x=>x.src).filter(Boolean));
+  document.title=doc.title||'iSTRIVE';document.head.innerHTML=doc.head.innerHTML;document.body.innerHTML=doc.body.innerHTML;document.body.className=doc.body.className||'';[...doc.body.attributes].forEach(a=>{if(a.name!=='class')document.body.setAttribute(a.name,a.value)});
+  for(const sc of run){if(sc.src){if(had.has(sc.src))continue;await new Promise((res,rej)=>{const el=document.createElement('script');el.src=sc.src;el.async=false;if(sc.module)el.type='module';el.onload=res;el.onerror=()=>{console.warn('script failed',sc.src);res()};document.head.appendChild(el)})}
+    else{const el=document.createElement('script');if(sc.module)el.type='module';el.textContent=sc.text;document.body.appendChild(el)}}}
+/* ---------- run the app ---------- */
+let started=false;
+async function start(u){if(started)return;started=true;
+  try{await persist}catch{}
+  if(window.APP_LOADER){try{await loadApp(u)}catch(e){started=false;say(card('Could not load iSTRIVE',`<p>${esc(e.message||e.code||e)}</p><div class="fb-bar"><button class="fb-btn p" onclick="location.reload()">Try again</button><button class="fb-lnk" id="fbOut">Sign out</button></div>`));$('#fbOut').onclick=()=>auth.signOut().then(()=>location.reload())}return}
+  progress('Starting iSTRIVE','Checking the data pack…');
+  let man;try{man=await manifest()}catch(e){started=false;if(e&&e.code==='NOACCESS'){say(card('Almost there',`<p>Your login works, but <b>${esc(u.email)}</b> has not been given access to the iSTRIVE records yet. Ask Max or Jennifer to open <b>Access</b> in iSTRIVE and allow this email, then press Try again.</p><div class="fb-bar"><button class="fb-btn p" onclick="location.reload()">Try again</button><button class="fb-lnk" id="fbOut">Sign out</button></div>`));$('#fbOut').onclick=()=>auth.signOut().then(()=>location.reload());return}say(card('Could not reach the data pack',`<p>${esc(e.message||e.code)}</p><div class="fb-bar"><button class="fb-btn p" onclick="location.reload()">Try again</button><button class="fb-lnk" id="fbOut">Sign out</button></div>`));$('#fbOut').onclick=()=>auth.signOut();return}
+  if(!man){started=false;setupScreen(u);return}
+  await dropOldCaches();
+  const ids=BASE_IDS.filter(id=>man.ids.includes(id));let i=0;
+  for(const id of ids){i++;const el=document.getElementById(id);if(!el)continue;setProg(`Loading ${id} (${i}/${ids.length})…`,(i-1)/ids.length);
+    try{el.textContent=await blockText(id,(g,t)=>setProg(`Loading ${id} (${i}/${ids.length}) ${(g/1e6).toFixed(1)}${t?' / '+(t/1e6).toFixed(1):''} MB`,(i-1+(t?g/t:0))/ids.length))}
+    catch(e){console.warn('block',id,e);setProg('Could not load '+id+' ('+(e.message||e.code)+')')}}
+  setProg('Opening…',1);
+  window.FB={app,auth,db,storage,projectId:CFG.projectId,pack:man,allow,uploadPack,createLogin,resetLogin,human,fastLoad,cache:CACHE,restPull,installApp,appRef:APP_REF,appGen:window.__APP_GEN||'',appMeta:window.__APP_META||null,signOut:()=>auth.signOut().then(()=>location.reload()),ready:false};
+  window.claude={use:async name=>{if(name==='db')return DB;if(name==='assets')return ASSETS;if(name==='user')return{me:async()=>({id:u.uid,email:u.email,name:u.displayName||u.email,isOwner:false})};throw new Error('no '+name)}};
+  const src=document.getElementById('appsrc').textContent;document.getElementById('appsrc').remove();
+  const s=document.createElement('script');s.textContent=src;document.body.appendChild(s);
+  document.body.classList.remove('fb-gate');gate.remove()}
+
+auth.onAuthStateChanged(u=>{if(started)return;if(!u){loginScreen();return}start(u)});
+})();
+
+</script>
+</body></html>
